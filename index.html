@@ -341,11 +341,14 @@
             osc.connect(gainNode);
             gainNode.connect(masterGainNode); // Connect to master
             
+            // 修正箇所1: 周波数の下限を0.01から20Hzに変更（古いiOSでのノイズ対策）
             osc.frequency.setValueAtTime(150, time);
-            osc.frequency.exponentialRampToValueAtTime(0.01, time + 0.5);
+            osc.frequency.exponentialRampToValueAtTime(20, time + 0.5);
             
+            // 修正箇所2: 音量の最後を完全に0に着地させてクリックノイズを防ぐ
             gainNode.gain.setValueAtTime(1, time);
-            gainNode.gain.exponentialRampToValueAtTime(0.01, time + 0.5);
+            gainNode.gain.exponentialRampToValueAtTime(0.01, time + 0.4);
+            gainNode.gain.linearRampToValueAtTime(0, time + 0.5);
             
             osc.start(time);
             osc.stop(time + 0.5);
