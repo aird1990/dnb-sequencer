@@ -3,7 +3,7 @@
 <head>
     <meta charset="UTF-8">
     <meta name="viewport" content="width=device-width, initial-scale=1.0">
-    <title>Drum'n'Bass Sequencer<</title>
+    <title>Drum'n'Bass Sequencer</title>
     <script src="https://cdn.tailwindcss.com"></script>
     <style>
         @import url('https://fonts.googleapis.com/css2?family=Orbitron:wght@400;700&family=Share+Tech+Mono&display=swap');
@@ -97,6 +97,9 @@
         .btn-danger { border-color: var(--neon-pink); color: var(--neon-pink); background: transparent; }
         .btn-danger:hover { background: var(--neon-pink); color: #fff; box-shadow: 0 0 12px var(--neon-pink); }
 
+        .btn-gray { border-color: #888; color: #888; background: transparent; }
+        .btn-gray:hover { background: #888; color: #000; box-shadow: 0 0 12px #888; }
+
         select {
             background: #1a1a1a;
             color: var(--neon-blue);
@@ -180,17 +183,30 @@
             box-shadow: 0 0 10px #fff;
         }
 
-        /* Custom Scrollbar for container */
-        .custom-scroll::-webkit-scrollbar {
-            height: 8px;
+        /* Custom Scrollbar */
+        .custom-scroll::-webkit-scrollbar { height: 8px; }
+        .custom-scroll::-webkit-scrollbar-track { background: #111; }
+        .custom-scroll::-webkit-scrollbar-thumb { background: #333; border-radius: 4px; }
+
+        /* Modal Styles */
+        .modal-overlay {
+            position: fixed; top: 0; left: 0; right: 0; bottom: 0;
+            background: rgba(0,0,0,0.85);
+            display: none; justify-content: center; align-items: center;
+            z-index: 50; backdrop-filter: blur(2px);
         }
-        .custom-scroll::-webkit-scrollbar-track {
-            background: #111;
+        .modal-overlay.active { display: flex; }
+        .modal-content {
+            background: var(--panel-bg); border: 1px solid var(--neon-blue);
+            border-radius: 8px; padding: 24px; width: 90%; max-width: 360px;
+            box-shadow: 0 0 20px rgba(0, 243, 255, 0.15);
         }
-        .custom-scroll::-webkit-scrollbar-thumb {
-            background: #333;
-            border-radius: 4px;
+        .modal-input {
+            background: #111; border: 1px solid #555; color: var(--neon-green);
+            padding: 6px 10px; border-radius: 4px; width: 80px;
+            font-family: 'Share Tech Mono', monospace; text-align: center; text-transform: uppercase;
         }
+        .modal-input:focus { border-color: var(--neon-green); outline: none; box-shadow: 0 0 8px rgba(57, 255, 20, 0.4); }
 
         /* Responsive */
         @media (max-width: 640px) {
@@ -231,6 +247,7 @@
                 </div>
 
                 <div class="flex gap-2">
+                    <button id="settingsBtn" class="btn btn-gray" title="MIDI Settings">⚙ SETTINGS</button>
                     <button id="exportBtn" class="btn btn-blue" title="Download MIDI File">MIDI ↓</button>
                 </div>
             </div>
@@ -284,6 +301,25 @@
     <div class="mt-8 text-gray-600 text-xs max-w-2xl text-center px-4">
         <p>4-Bar (64 steps) Sequencer. Select Bars [1]-[4] to edit different sections.</p>
         <p class="mt-2">Presets prioritized by 2-Step variations.</p>
+    </div>
+
+    <!-- MIDI Settings Modal -->
+    <div id="midiSettingsModal" class="modal-overlay">
+        <div class="modal-content">
+            <h2 class="text-xl font-bold text-neon-blue mb-4 text-center">MIDI Mapping</h2>
+            <p class="text-xs text-gray-400 mb-4 text-center">Format: Note+Octave (e.g. C3, D#2)<br>Roland standard (C4 = 60)</p>
+            
+            <div id="midi-settings-list" class="mb-4">
+                <!-- Dynamic input rows injected here -->
+            </div>
+            
+            <div id="settings-error" class="text-neon-pink text-xs text-center h-4 mb-4"></div>
+
+            <div class="flex justify-end gap-2">
+                <button id="cancelSettingsBtn" class="btn btn-gray">Cancel</button>
+                <button id="saveSettingsBtn" class="btn">Save</button>
+            </div>
+        </div>
     </div>
 
     <script>
@@ -370,6 +406,42 @@
             { id: 'kick', label: 'Kick', color: 'row-kick' }
         ];
 
+        // --- MIDI MAPPING LOGIC ---
+        // Indices matching TRACKS array (OH, C-Hat, Snare, Kick)
+        // Default values: 46 (A#2), 42 (F#2), 38 (D2), 36 (C2) based on C4=60
+        let midiMapping = [46, 42, 38, 36];
+        const noteNames = ["C", "C#", "D", "D#", "E", "F", "F#", "G", "G#", "A", "A#", "B"];
+
+        function noteToName(noteIndex) {
+            if (noteIndex < 0 || noteIndex > 127) return "---";
+            const octave = Math.floor(noteIndex / 12) - 1;
+            const name = noteNames[noteIndex % 12];
+            return `${name}${octave}`;
+        }
+
+        function nameToNote(noteName) {
+            if (!noteName) return null;
+            // Match format like C4, D#2, Bb-1
+            const match = noteName.trim().match(/^([a-gA-G][#bB]?)(-?\d+)$/);
+            if (!match) return null;
+
+            let name = match[1].toUpperCase();
+            // Convert Flat (b/B) to Sharp (#) internally for calculation
+            if (name.endsWith('B')) {
+                const flatMap = {"DB":"C#", "EB":"D#", "GB":"F#", "AB":"G#", "BB":"A#", "CB":"B", "FB":"E"};
+                name = flatMap[name] || name;
+            }
+
+            const octave = parseInt(match[2], 10);
+            const nameIdx = noteNames.indexOf(name);
+            if (nameIdx === -1) return null;
+
+            // C4 = 60 calculation
+            const note = (octave + 1) * 12 + nameIdx;
+            if (note < 0 || note > 127) return null;
+            return note;
+        }
+
         // Grid state: [row][step]
         let gridState = Array(4).fill().map(() => Array(STEPS).fill(false));
         
@@ -384,9 +456,8 @@
         const lookahead = 25.0;
         const scheduleAheadTime = 0.1;
 
-        // --- REORDERED PRESETS ---
+        // --- PRESETS ---
         const presets = [
-            // --- Priority 2-Step Group (1-5) ---
             { 
                 name: "1. The 2-Step (Standard)", 
                 desc: "基本形。キック(0, 10)、スネア(4, 12)。最も使われるパターン。", 
@@ -427,8 +498,6 @@
                 ch: Array.from({length: 64}, (_, i) => i).filter(i => i % 2 === 0),
                 oh: [14, 30, 46]
             },
-
-            // --- Other 2-Step Variations (6-15) ---
             {
                 name: "6. 2-Step: Pushed (前ノリ)",
                 desc: "2発目のキックを半拍早く(Step 9)。つんのめるような疾走感。",
@@ -509,8 +578,6 @@
                 ch: Array.from({length: 64}, (_, i) => i).filter(i => i % 2 === 0), 
                 oh: [0, 16, 32, 48] 
             },
-
-            // --- Other Genres (16+) ---
             { 
                 name: "16. The Steppa", 
                 desc: "キックを減らし、ゴーストノートでシャッフル感を出す。", 
@@ -690,6 +757,53 @@
             }
         }
 
+        // --- SETTINGS MODAL LOGIC ---
+        function openSettings() {
+            const list = document.getElementById('midi-settings-list');
+            list.innerHTML = '';
+            
+            TRACKS.forEach((t, i) => {
+                const row = document.createElement('div');
+                row.className = 'flex justify-between items-center mb-3';
+                row.innerHTML = `
+                    <span class="text-sm font-bold text-gray-300 w-24">${t.label}</span>
+                    <input type="text" id="midi-input-${i}" class="modal-input" value="${noteToName(midiMapping[i])}">
+                `;
+                list.appendChild(row);
+            });
+
+            document.getElementById('settings-error').innerText = '';
+            document.getElementById('midiSettingsModal').classList.add('active');
+        }
+
+        function saveSettings() {
+            let newMapping = [];
+            let hasError = false;
+            const errorEl = document.getElementById('settings-error');
+            errorEl.innerText = '';
+
+            for (let i = 0; i < 4; i++) {
+                const inputEl = document.getElementById(`midi-input-${i}`);
+                const val = inputEl.value;
+                const noteNum = nameToNote(val);
+                
+                if (noteNum === null) {
+                    hasError = true;
+                    inputEl.style.borderColor = 'var(--neon-pink)';
+                } else {
+                    inputEl.style.borderColor = '#555';
+                    newMapping.push(noteNum);
+                }
+            }
+
+            if (hasError) {
+                errorEl.innerText = 'Invalid format! Use C4, D#2, Bb1 etc.';
+            } else {
+                midiMapping = newMapping;
+                document.getElementById('midiSettingsModal').classList.remove('active');
+            }
+        }
+
         // --- SCHEDULER ---
         function scheduleNote(step, time) {
             // Visual Scheduling
@@ -739,15 +853,15 @@
         function exportMIDI() {
             const PPQ = 480;
             const stepTicks = 120;
-            const noteMap = [46, 42, 38, 36];
 
             let events = [];
             for (let s = 0; s < STEPS; s++) {
                 const tick = s * stepTicks;
                 for (let r = 0; r < 4; r++) {
                     if (gridState[r][s]) {
-                        events.push({ tick: tick, type: 0x90, note: noteMap[r], vel: 100 });
-                        events.push({ tick: tick + 60, type: 0x80, note: noteMap[r], vel: 0 });
+                        // Use customized midiMapping instead of static noteMap
+                        events.push({ tick: tick, type: 0x90, note: midiMapping[r], vel: 100 });
+                        events.push({ tick: tick + 60, type: 0x80, note: midiMapping[r], vel: 0 });
                     }
                 }
             }
@@ -775,7 +889,10 @@
 
             const blob = new Blob([fileData], { type: 'audio/midi' });
             const url = URL.createObjectURL(blob);
-            const a = document.createElement('a'); a.href = url; a.download = `dnb_pattern_64_${Date.now()}.mid`; a.click();
+            const a = document.createElement('a'); 
+            a.href = url; 
+            a.download = `dnb_pattern.mid`; // Changed to fixed file name
+            a.click();
             URL.revokeObjectURL(url);
         }
 
@@ -842,6 +959,13 @@
                 masterVol = e.target.value / 100;
                 if (masterGain && audioCtx) masterGain.gain.setValueAtTime(masterVol, audioCtx.currentTime);
             });
+
+            // Settings Modal Events
+            document.getElementById('settingsBtn').addEventListener('click', openSettings);
+            document.getElementById('cancelSettingsBtn').addEventListener('click', () => {
+                document.getElementById('midiSettingsModal').classList.remove('active');
+            });
+            document.getElementById('saveSettingsBtn').addEventListener('click', saveSettings);
 
             loadPreset(0);
         });
